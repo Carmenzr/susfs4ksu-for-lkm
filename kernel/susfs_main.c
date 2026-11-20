@@ -461,6 +461,8 @@ static int __init susfs_init(void)
         }
     }
 
+    susfs_priority_uid_init();
+
     /* Registered last and undone implicitly: these are entries in sus_path's table, which
      * sus_path_exit() empties while its LSM layer still answers ENOENT for the nodes. */
     susfs_self_hide_nodes();
