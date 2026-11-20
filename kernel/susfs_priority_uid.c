@@ -22,6 +22,9 @@
 #include <linux/rcupdate.h>
 #include <linux/string.h>
 #include <linux/uidgid.h>
+#include <linux/kprobes.h>
+#include <linux/sched.h>
+#include <linux/resource.h>
 
 #define SUSFS_UID_FILTER_MIN   10000
 #define SUSFS_UID_FILTER_MAX   19999
@@ -216,18 +219,96 @@ static const struct proc_ops susfs_uid_ops = {
 	.proc_write	= susfs_uid_write,
 };
 
+/* ---- getpriority interception (stage 2) ---------------------------------
+ *
+ * Upstream v2.4 patches kernel/sys.c and skips the lookup with -ESRCH before
+ * the target task is inspected. A module cannot edit that source, so the same
+ * visibility change is produced at the syscall boundary: the target UID is
+ * checked on entry and the return value is overwritten with -ESRCH on exit.
+ * The syscall itself still runs, which is harmless for getpriority (it has no
+ * side effects), and apps never see a value for a filtered UID.
+ */
+struct prio_probe_data {
+	bool filtered;
+};
+
+static int prio_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct prio_probe_data *d = (void *)ri->data;
+	unsigned int target = 0;
+	int which = (int)regs->regs[0];
+	int who = (int)regs->regs[1];
+	struct task_struct *task;
+
+	d->filtered = false;
+
+	if (from_kuid(&init_user_ns, current_cred()->uid) < SUSFS_UID_FILTER_MIN)
+		return 0;
+	if (who <= 0)
+		return 0;
+
+	switch (which) {
+	case PRIO_PROCESS:
+		rcu_read_lock();
+		task = find_task_by_vpid(who);
+		if (task)
+			target = from_kuid(&init_user_ns, task_uid(task));
+		rcu_read_unlock();
+		break;
+	case PRIO_USER:
+		target = (unsigned int)who;
+		break;
+	default:
+		return 0;
+	}
+
+	if (target && susfs_is_priority_uid_filtered(target))
+		d->filtered = true;
+
+	return 0;
+}
+
+static int prio_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct prio_probe_data *d = (void *)ri->data;
+
+	if (d->filtered) {
+		regs_set_return_value(regs, -ESRCH);
+		pr_info_ratelimited("susfs_priority_uid: hid a getpriority target\n");
+	}
+	return 0;
+}
+
+static struct kretprobe susfs_prio_krp = {
+	.kp = {
+		.symbol_name = "__arm64_sys_getpriority",
+	},
+	.entry_handler = prio_entry,
+	.handler = prio_ret,
+	.data_size = sizeof(struct prio_probe_data),
+	.maxactive = 64,
+};
+
 int susfs_priority_uid_init(void)
 {
 	susfs_uid_entry = proc_create("susfs_priority_uid_filter", 0600, NULL,
 				      &susfs_uid_ops);
 	if (!susfs_uid_entry)
 		pr_warn("susfs_priority_uid: control node unavailable\n");
+
+	if (register_kretprobe(&susfs_prio_krp)) {
+		pr_warn("susfs_priority_uid: getpriority probe unavailable, filter inactive\n");
+	} else {
+		pr_info("susfs_priority_uid: getpriority probe armed\n");
+	}
 	return 0;
 }
 
 void susfs_priority_uid_exit(void)
 {
 	struct susfs_uid_filter *old;
+
+	unregister_kretprobe(&susfs_prio_krp);
 
 	if (susfs_uid_entry) {
 		proc_remove(susfs_uid_entry);
