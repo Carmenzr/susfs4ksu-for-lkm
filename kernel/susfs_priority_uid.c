@@ -83,7 +83,7 @@ bool susfs_is_priority_uid_filtered(unsigned int uid)
 
 static int susfs_uid_build(const char *apps, struct susfs_uid_filter *b)
 {
-	char *buf, *tok, *save = NULL;
+	char *buf, *tok;
 	int added = 0;
 
 	buf = kstrdup(apps, GFP_KERNEL);
