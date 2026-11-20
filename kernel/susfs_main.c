@@ -492,6 +492,7 @@ static int __init susfs_init(void)
 
 static void __exit susfs_exit(void)
 {
+    susfs_priority_uid_exit();
     susfs_layers_down((int)ARRAY_SIZE(susfs_layers) - 1);
     SUSFS_LOGI("susfs_guard_lkm: exit\n");
 }
