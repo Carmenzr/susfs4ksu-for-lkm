@@ -410,6 +410,9 @@ static int susfs_load_layer(int id, bool fatal)
     return 0;
 }
 
+extern int susfs_priority_uid_init(void);
+extern void susfs_priority_uid_exit(void);
+
 static int __init susfs_init(void)
 {
     int i;
