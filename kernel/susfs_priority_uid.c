@@ -228,6 +228,10 @@ static const struct proc_ops susfs_uid_ops = {
  * The syscall itself still runs, which is harmless for getpriority (it has no
  * side effects), and apps never see a value for a filtered UID.
  */
+static bool susfs_prio_debug;
+module_param_named(debug, susfs_prio_debug, bool, 0644);
+MODULE_PARM_DESC(debug, "log every getpriority call the probe sees");
+
 struct prio_probe_data {
 	bool filtered;
 };
@@ -261,6 +265,11 @@ static int prio_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 	default:
 		return 0;
 	}
+
+	if (susfs_prio_debug)
+		pr_info("susfs_priority_uid: which=%d who=%d caller=%u target=%u\n",
+			which, who,
+			from_kuid(&init_user_ns, current_cred()->uid), target);
 
 	if (target && susfs_is_priority_uid_filtered(target))
 		d->filtered = true;
