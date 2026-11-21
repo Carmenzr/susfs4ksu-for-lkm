@@ -307,9 +307,9 @@ int susfs_priority_uid_init(void)
 
 	if (register_kretprobe(&susfs_prio_krp)) {
 		pr_warn("susfs_priority_uid: getpriority probe unavailable, filter inactive\n");
-	} else {
-		pr_info("susfs_priority_uid: getpriority probe armed\n");
+		return -ENODEV;
 	}
+	pr_info("susfs_priority_uid: getpriority probe armed\n");
 	return 0;
 }
 
