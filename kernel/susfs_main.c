@@ -461,7 +461,8 @@ static int __init susfs_init(void)
         }
     }
 
-    susfs_priority_uid_init();
+    if (susfs_priority_uid_init() == 0)
+        susfs_supercall_arm_feature(SUSFS_FEAT_PRIORITY_UID_FILTER);
 
     /* Registered last and undone implicitly: these are entries in sus_path's table, which
      * sus_path_exit() empties while its LSM layer still answers ENOENT for the nodes. */
